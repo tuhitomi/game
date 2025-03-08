@@ -1,0 +1,7 @@
+# depslib dependency file v1.0
+1739592308 source:d:\sdl\main.cpp
+	<SDL.h>
+	<iostream>
+	<vector>
+	<algorithm>
+
