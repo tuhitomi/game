@@ -407,15 +407,18 @@ class Game
     //menu trước khi vào game
     void renderMenu()
     {
-        // Vẽ nền menu (tùy chọn màu sắc hoặc hình ảnh)
-        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-        SDL_RenderClear(renderer);
-
-        // Vẽ chữ "Menu" hoặc một thông điệp bất kỳ
-        SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+        // Tải ảnh nền menu
+        SDL_Texture* backgroundTexture = loadTexture("menu_background.png");
+        if (!backgroundTexture)
+        {
+            cerr << "Không tìm thấy ảnh nền menu: " << IMG_GetError() << "\n";
+            return;
+        }
+        // Vẽ ảnh nền menu
+        SDL_RenderCopy(renderer, backgroundTexture, NULL, NULL);
         // Tạo một rectangle để chứa các nút
-        SDL_Rect startButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 - 50, 200, 50 };
-        SDL_Rect quitButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 + 50, 200, 50 };
+        SDL_Rect startButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 - 50, 200, 100 };
+        SDL_Rect quitButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 + 50, 200, 100 };
 
         // Vẽ các nút bấm
         SDL_RenderFillRect(renderer, &startButton);
@@ -431,7 +434,7 @@ class Game
 
         // Hiển thị lên màn hình
         SDL_RenderPresent(renderer);
-
+        SDL_DestroyTexture(backgroundTexture);
         SDL_DestroyTexture(startTexture);
         SDL_DestroyTexture(quitTexture);
     }
@@ -561,6 +564,37 @@ class Game
             }
         }
     }
+    // Hiển thị màn hình thắng
+    void renderWin()
+    {
+        SDL_Texture* winTexture = loadTexture("win.png");
+        if (!winTexture)
+        {
+            cerr << "Không tìm thấy ảnh win: " << IMG_GetError() << "\n";
+            return;
+        }
+
+        SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+        SDL_RenderCopy(renderer, winTexture, NULL, &destRect);
+        SDL_RenderPresent(renderer);
+        SDL_DestroyTexture(winTexture);
+    }
+
+    // Hiển thị màn hình thua
+    void renderLose()
+    {
+        SDL_Texture* loseTexture = loadTexture("lose.png");
+        if (!loseTexture)
+        {
+            cerr << "Không tìm thấy ảnh lose: " << IMG_GetError() << "\n";
+            return;
+        }
+
+        SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+        SDL_RenderCopy(renderer, loseTexture, NULL, &destRect);
+        SDL_RenderPresent(renderer);
+        SDL_DestroyTexture(loseTexture);
+    }
     void update()
     {
         if(pause==0)
@@ -615,9 +649,29 @@ class Game
                 }
             }
             enemies.erase(std::remove_if(enemies.begin(),enemies.end(),[](enemytank &e){return !e.active;}),enemies.end());
-            if(enemies.empty())
+            // Kiểm tra nếu thắng (không còn kẻ thù)
+            if (enemies.empty())
             {
-                running=0;
+                // Tải ảnh chiến thắng
+                SDL_Texture* winTexture = loadTexture("win.png");
+                if (!winTexture)
+                {
+                    cerr << "Không tìm thấy ảnh win: " << IMG_GetError() << endl;
+                    return;
+                }
+
+                // Vẽ ảnh chiến thắng lên màn hình
+                SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+                SDL_RenderCopy(renderer, winTexture, NULL, &destRect);
+                SDL_RenderPresent(renderer);
+
+                // Giữ màn hình chiến thắng trong 3 giây
+                SDL_Delay(3000);
+                SDL_DestroyTexture(winTexture);
+
+                // Kết thúc game
+                running = 0;
+                return;
             }
             for(auto& enemy:enemies)
             {
@@ -625,6 +679,19 @@ class Game
                 {
                     if(SDL_HasIntersection(&bullet.rect,&player.rect))
                     {
+                        SDL_Texture* loseTexture = loadTexture("lose.png");
+                        if (!loseTexture)
+                        {
+                            cerr << "Không tìm thấy ảnh lose: " << IMG_GetError() << endl;
+                            return;
+                        }
+                        // Vẽ ảnh thua lên màn hình
+                        SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+                        SDL_RenderCopy(renderer, loseTexture, NULL, &destRect);
+                        SDL_RenderPresent(renderer);
+                        // Giữ màn hình thua trong 3 giây
+                        SDL_Delay(3000);
+                        SDL_DestroyTexture(loseTexture);
                         running=0;
                         return ;
                     }
