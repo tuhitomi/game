@@ -3,15 +3,19 @@
 #include <vector>
 #include <algorithm>
 #include <SDL_image.h>
+#include <fstream>
+#include<cmath>
 using namespace std;
 // Kích thước cửa sổ và các thông số game
-const int SCREEN_WIDTH = 800;
+const int SCREEN_WIDTH = 840;
 const int SCREEN_HEIGHT = 600;
-const int TILE_SIZE=40;
+const int TILE_SIZE=20;
 const int MAP_WIDTH=SCREEN_WIDTH/TILE_SIZE;
 const int MAP_HEIGHT=SCREEN_HEIGHT/TILE_SIZE;
 const int FPS = 60;
 const int FRAME_DELAY = 1000 / FPS;
+const Uint8* keystates = SDL_GetKeyboardState(NULL);
+int mapp[50][50];  // Khởi tạo map
 /*void menu()
 {
     SDL_Texture* menuTexture = loadTexture("menu_image.png");  // Tải ảnh menu
@@ -117,7 +121,7 @@ public:
         y=y+dy;
         rect.x=x;
         rect.y=y;
-        if(x<TILE_SIZE || x>SCREEN_WIDTH-TILE_SIZE || y<TILE_SIZE || y>SCREEN_HEIGHT-TILE_SIZE)
+        if(x<0 || x>SCREEN_WIDTH || y<0 || y>SCREEN_HEIGHT)
         {
             active=0;
         }
@@ -157,7 +161,7 @@ public:
         y = starty;
         rect = {x, y, TILE_SIZE, TILE_SIZE};
         dirx = 0;
-        diry = -1;
+        diry = 1;
         texture = loadTexture(imagePath, renderer);  // Tải texture cho xe tăng
     }
 
@@ -173,12 +177,6 @@ public:
 
         SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
         SDL_FreeSurface(surface);
-
-        if (!texture)
-        {
-            cerr << "Không thể tạo texture: " << SDL_GetError() << endl;
-        }
-
         return texture;
     }
     void move(int dx,int dy,const vector<wall>& walls)
@@ -195,7 +193,7 @@ public:
                 return;
             }
         }
-        if(newx>=TILE_SIZE and newx<=SCREEN_WIDTH-TILE_SIZE*2 and newy>=TILE_SIZE and newy<=SCREEN_HEIGHT-TILE_SIZE*2)
+        if(newx>=0 and newx<=SCREEN_WIDTH and newy>=0 and newy<=SCREEN_HEIGHT)
         {
             x=newx;
             y=newy;
@@ -209,6 +207,12 @@ public:
         {
             SDL_RenderCopy(renderer, texture, NULL, &rect);  // Vẽ xe tăng lên màn hình
         }
+        else
+        {
+            // Nếu texture không hợp lệ, có thể vẽ hình chữ nhật dự phòng
+            SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
+            SDL_RenderFillRect(renderer, &rect);
+        }
         for(auto& bullet:bullets)
         {
             bullet.render(renderer);
@@ -221,7 +225,7 @@ class enemytank
 public:
     int x,y;
     int dirx,diry;
-    int movedelay,shootdelay;
+    int movedelay=0,shootdelay;
     SDL_Rect rect;
     bool active;
     vector<bullet> bullets;
@@ -233,7 +237,7 @@ public:
         y = starty;
         rect = {x, y, TILE_SIZE, TILE_SIZE};
         dirx = 0;
-        diry = 1;
+        diry = -1;
         active = true;
         texture = loadTexture(imagePath, renderer);  // Tải texture cho xe tăng kẻ thù
     }
@@ -258,34 +262,49 @@ public:
 
         return texture;
     }
-    void move(const vector<wall>& walls)
+    void move(const vector<wall>& walls, const playertank& player, SDL_Renderer* renderer)
     {
         if(--movedelay>0) return;
-        movedelay=15;
-        int r=rand()%4;
-        //up
-        if(r==0)
-        {
-            this->dirx=0;
-            this->diry=-5;
+        movedelay=30;
+        // Tính toán khoảng cách đến người chơi
+        float dx = player.x - x;
+        float dy = player.y - y;
+        float distance = sqrt(dx * dx + dy * dy);
+
+        // Nếu đủ gần, di chuyển theo hướng người chơi
+        if (distance < 200)
+        {   // Điều chỉnh giá trị này cho phù hợp
+            double angle = atan2(dy, dx);
+            dirx = 5 * cos(angle);
+            diry = 5 * sin(angle);
         }
-        //down
-        else if(r==1)
-        {
-            this->dirx=0;
-            this->diry=5;
-        }
-        //left
-        else if(r==2)
-        {
-            this->dirx=-5;
-            this->diry=0;
-        }
-        //right
         else
         {
-            this->dirx=5;
-            this->diry=0;
+            int r=rand()%4;
+            //up
+            if(r==0)
+            {
+                this->dirx=0;
+                this->diry=-5;
+            }
+            //down
+            else if(r==1)
+            {
+                this->dirx=0;
+                this->diry=5;
+            }
+            //left
+            else if(r==2)
+            {
+                this->dirx=-5;
+                this->diry=0;
+            }
+            //right
+            else
+            {
+                this->dirx=5;
+                this->diry=0;
+            }
         }
         int newx=x+this->dirx;
         int newy=y+this->diry;
@@ -346,12 +365,16 @@ class Game
     vector<enemytank> enemies;
     void generatewalls()
     {
-        for(int i=3;i<MAP_HEIGHT-3;i+=2)
+        for(int i=0;i<28;i++)
         {
-            for(int j=3;j<MAP_WIDTH-3;j+=2)
+            for(int j=0;j<42;j++)
             {
-                wall w = wall(j * TILE_SIZE, i * TILE_SIZE, renderer, "wall.png");
-                walls.push_back(w);
+                if(mapp[i][j]==0)
+                {
+                    wall w = wall(j * TILE_SIZE, 40+i * TILE_SIZE, renderer, "wall.png");
+                    walls.push_back(w);
+                }
+
             }
         }
     }
@@ -374,7 +397,8 @@ class Game
         }
         return texture;
     }
-    Game(): player(((MAP_WIDTH - 1) / 2) * TILE_SIZE, (MAP_HEIGHT - 2) * TILE_SIZE, renderer, "player_tank.png")
+
+    Game():player(0, 80, nullptr, "player_tank.png")
     {
         running=1;
         pause=0;
@@ -396,11 +420,13 @@ class Game
             cerr<<"SDL could not be created! SDL_Error: "<<SDL_GetError()<<"\n";
             running=0;
         }
+
         if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG))
         {
             cerr << "SDL_image could not initialize! SDL_image Error: " << IMG_GetError() <<"\n";
             running = 0;
         }
+        player.texture = player.loadTexture("player_tank.png", renderer);
         generatewalls();
         spawnenemies();
     }
@@ -438,25 +464,30 @@ class Game
         SDL_DestroyTexture(startTexture);
         SDL_DestroyTexture(quitTexture);
     }
-
     void handleMenu()
     {
+        SDL_Rect startButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 - 50, 200, 100 };
+        SDL_Rect quitButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 + 50, 200, 100 };
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             if (event.type == SDL_QUIT)
             {
-                running = 0;
+                running = false;
             }
-            else if (event.type == SDL_KEYDOWN)
+            else if (event.type == SDL_MOUSEBUTTONDOWN)
             {
-                if (event.key.keysym.sym == SDLK_RETURN) // Bắt sự kiện nhấn Enter để bắt đầu game
+                int mouseX = event.button.x;
+                int mouseY = event.button.y;
+                // Kiểm tra xem người dùng có nhấp vào nút Start không
+                if (mouseX >= startButton.x && mouseX <= startButton.x + startButton.w && mouseY >= startButton.y && mouseY <= startButton.y + startButton.h)
                 {
                     inmenu = false; // Bắt đầu game
                 }
-                else if (event.key.keysym.sym == SDLK_ESCAPE) // Thoát game
+                // Kiểm tra xem người dùng có nhấp vào nút Quit không
+                else if (mouseX >= quitButton.x && mouseX <= quitButton.x + quitButton.w && mouseY >= quitButton.y && mouseY <= quitButton.y + quitButton.h)
                 {
-                    running = 0;
+                    running = false; // Thoát game
                 }
             }
         }
@@ -472,7 +503,7 @@ class Game
             while(!validposition)
             {
                 ex=(rand()%(MAP_WIDTH-2)+1)*TILE_SIZE;
-                ey=(rand()%(MAP_HEIGHT-2)+1)*TILE_SIZE;
+                ey=(rand()%(MAP_HEIGHT-4)+3)*TILE_SIZE;
                 validposition=1;
                 for(const auto& wall:walls)
                 {
@@ -517,9 +548,9 @@ class Game
         if(pause==0)
         {
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
-            for(int i=1;i<MAP_HEIGHT-1;i++)
+            for(int i=0;i<30;i++)
             {
-                for(int j=1;j<MAP_WIDTH-1;j++)
+                for(int j=0;j<42;j++)
                 {
                     SDL_Rect tile={j*TILE_SIZE, i*TILE_SIZE, TILE_SIZE, TILE_SIZE};
                     SDL_RenderFillRect(renderer, &tile);
@@ -532,6 +563,7 @@ class Game
             }
             //player
             player.render(renderer);
+            //enemy
             for(auto& enemy:enemies)
             {
                 enemy.render(renderer);
@@ -539,6 +571,7 @@ class Game
         }
         else {pausegame();}
         SDL_RenderPresent(renderer);
+
     }
     //palyertank move
     void handle()
@@ -550,17 +583,29 @@ class Game
             {
                 running=0;
             }
-            else if(event.type==SDL_KEYDOWN)
+            if (keystates[SDL_SCANCODE_UP])
             {
-                switch (event.key.keysym.sym)
-                {
-                    case SDLK_UP: player.move(0,-5,walls);break;
-                    case SDLK_DOWN: player.move(0,5,walls);break;
-                    case SDLK_LEFT: player.move(-5,0,walls);break;
-                    case SDLK_RIGHT: player.move(5,0,walls);break;
-                    case SDLK_SPACE: player.shoot(renderer,"playerbullet.jpg");break;
-                    case SDLK_ESCAPE: pause=!pause;break;
-                }
+                player.move(0, -5, walls);
+            }
+            if (keystates[SDL_SCANCODE_DOWN])
+            {
+                player.move(0, 5, walls);
+            }
+            if (keystates[SDL_SCANCODE_LEFT])
+            {
+                player.move(-5, 0, walls);
+            }
+            if (keystates[SDL_SCANCODE_RIGHT])
+            {
+                player.move(5, 0, walls);
+            }
+            if (keystates[SDL_SCANCODE_SPACE])
+            {
+                 player.shoot(renderer, "playerbullet.jpg");
+            }
+            if (keystates[SDL_SCANCODE_ESCAPE])
+            {
+                   pause = !pause;
             }
         }
     }
@@ -606,7 +651,7 @@ class Game
                 {
                     if(wall.active && SDL_HasIntersection(&bullet.rect,&wall.rect))
                     {
-                        wall.active=0;
+                        //wall.active=0;
                         bullet.active=0;
                         break;
                     }
@@ -626,7 +671,7 @@ class Game
             }
             for(auto& enemy:enemies)
             {
-                enemy.move(walls);
+                enemy.move(walls, player, renderer);
                 enemy.updatebullets();
                 if(rand()%100<2)
                 {
@@ -641,7 +686,7 @@ class Game
                     {
                         if(wall.active && SDL_HasIntersection(&bullet.rect,&wall.rect))
                         {
-                            wall.active=0;
+                            //wall.active=0;
                             bullet.active=0;
                             break;
                         }
@@ -732,6 +777,18 @@ class Game
 };
 int main(int argc, char* argv[])
 {
+    ifstream file("map.txt");  // Mở file để đọc
+    if (!file) {
+        cout << "Không thể mở file map!" << endl;
+        return 1;
+    }
+    // Đọc các phần tử vào mảng
+    for (int i = 0; i < 28; ++i) {
+        for (int j = 0; j < 42; ++j) {
+            file >> mapp[i][j];
+        }
+    }
+    file.close();  // Đóng file
     Game game;
     if(game.running)
     {
