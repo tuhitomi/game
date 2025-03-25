@@ -5,6 +5,7 @@
 #include <SDL_image.h>
 #include <fstream>
 #include<cmath>
+#include <SDL_ttf.h>
 using namespace std;
 // Kích thước cửa sổ và các thông số game
 const int SCREEN_WIDTH = 840;
@@ -16,20 +17,6 @@ const int FPS = 60;
 const int FRAME_DELAY = 1000 / FPS;
 const Uint8* keystates = SDL_GetKeyboardState(NULL);
 int mapp[50][50];  // Khởi tạo map
-/*void menu()
-{
-    SDL_Texture* menuTexture = loadTexture("menu_image.png");  // Tải ảnh menu
-    if (!menuTexture)
-    {
-        cerr << "Không thể tải ảnh menu.\n";
-        return;
-    }
-
-    // Vẽ menu
-    SDL_RenderCopy(renderer, menuTexture, NULL, NULL);
-    SDL_RenderPresent(renderer);
-    SDL_DestroyTexture(menuTexture);
-}*/
 class wall
 {
 public:
@@ -41,11 +28,58 @@ public:
     {
         x = startx;
         y = starty;
-        active = 1;
+        //active = 1;
         rect = {x, y, TILE_SIZE, TILE_SIZE};
         texture = loadTexture(imagePath, renderer);  // Tải texture từ ảnh
     }
     // Hàm tải ảnh thành texture
+    SDL_Texture* loadTexture(const string& path, SDL_Renderer* renderer)
+    {
+        SDL_Surface* surface = IMG_Load(path.c_str());
+        if (!surface)
+        {
+            cerr << "Không thể tải ảnh: " << IMG_GetError() << endl;
+            return nullptr;
+        }
+        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+        SDL_FreeSurface(surface);
+        if (!texture)
+        {
+            cerr << "Không thể tạo texture: " << SDL_GetError() << endl;
+        }
+        return texture;
+    }
+
+    // Hàm vẽ tường
+    void render(SDL_Renderer* renderer)
+    {
+        if (active && texture)
+        {
+            SDL_RenderCopy(renderer, texture, NULL, &rect);  // Vẽ ảnh lên màn hình
+        }
+    }
+};
+class DestructibleWall : public wall
+{
+public:
+    DestructibleWall(int startx, int starty, SDL_Renderer* renderer, const string& imagePath) : wall(startx,starty,renderer,imagePath){}
+};
+class Buff {
+public:
+    enum BuffType { AMMO, LIFE };
+    int x, y;
+    SDL_Rect rect;
+    bool active;
+    SDL_Texture* texture;
+    BuffType type;
+
+
+    Buff(int startx, int starty, SDL_Renderer* renderer, const string& imagePath, BuffType buffType) :
+    x(startx), y(starty), active(true), type(buffType)
+    {
+        rect = { x, y, TILE_SIZE, TILE_SIZE };
+        texture = loadTexture(imagePath, renderer);
+    }
     SDL_Texture* loadTexture(const string& path, SDL_Renderer* renderer)
     {
         SDL_Surface* surface = IMG_Load(path.c_str());
@@ -62,16 +96,14 @@ public:
         {
             cerr << "Không thể tạo texture: " << SDL_GetError() << endl;
         }
-
         return texture;
     }
 
-    // Hàm vẽ tường
     void render(SDL_Renderer* renderer)
     {
         if (active && texture)
         {
-            SDL_RenderCopy(renderer, texture, NULL, &rect);  // Vẽ ảnh lên màn hình
+            SDL_RenderCopy(renderer, texture, NULL, &rect);
         }
     }
 };
@@ -92,7 +124,7 @@ public:
         dx = dirx;
         dy = diry;
         active = 1;
-        rect = {x, y, 10, 10};  // Kích thước mặc định của đạn (có thể thay đổi nếu cần)
+        rect = {x, y, 10, 10};  // Kích thước mặc định của đạn
         texture = loadTexture(renderer, texturePath);  // Tải hình ảnh đạn
     }
 
@@ -117,11 +149,11 @@ public:
     }
     void move()
     {
-        x=x+dx;
-        y=y+dy;
+        x=x+dx/4;
+        y=y+dy/4;
         rect.x=x;
         rect.y=y;
-        if(x<0 || x>SCREEN_WIDTH || y<0 || y>SCREEN_HEIGHT)
+        if(x<=0 || x>=SCREEN_WIDTH || y<=0 || y>=SCREEN_HEIGHT)
         {
             active=0;
         }
@@ -138,6 +170,19 @@ public:
 class playertank
 {
 public:
+    // Animation
+    SDL_Texture* spriteSheet = nullptr;
+    int currentFrame = 0;
+    Uint32 lastFrameTime = 0;
+    int frameDelay = 100;
+    int currentDirection = 0; // 0: trái, 1: phải, 2: dưới, 3: trên
+    int frameWidth;
+    int frameHeight;
+    SDL_Renderer* pRenderer=nullptr; // Lưu trữ renderer
+    int lives = 3;
+    int ammo = 40;
+    int currentAmmo = ammo;
+    bool isShooting = false;
     int x,y;
     int dirx,diry;
     SDL_Rect rect;
@@ -145,7 +190,12 @@ public:
     vector<bullet> bullets;
     void shoot(SDL_Renderer* renderer, const string& texturePath)
     {
-        bullets.push_back(bullet(x + TILE_SIZE / 2 - 5, y + TILE_SIZE / 2 - 5, this->dirx, this->diry, renderer, texturePath));
+        if (currentAmmo > 0 && isShooting==true)
+        {
+            bullets.push_back(bullet(x + TILE_SIZE / 2 - 5, y + TILE_SIZE / 2 - 5, this->dirx, this->diry, renderer, texturePath));
+            currentAmmo--;
+            isShooting = false; // Đặt lại cờ isShooting sau khi bắn
+        }
     }
     void updatebullets()
     {
@@ -155,16 +205,26 @@ public:
         }
         bullets.erase(std::remove_if(bullets.begin(),bullets.end(),[](bullet &b){return !b.active;}),bullets.end());
     }
-    playertank(int startx, int starty, SDL_Renderer* renderer, const string& imagePath)
+    playertank(int startx, int starty, SDL_Renderer* renderer)
     {
         x = startx;
         y = starty;
         rect = {x, y, TILE_SIZE, TILE_SIZE};
         dirx = 0;
-        diry = 1;
-        texture = loadTexture(imagePath, renderer);  // Tải texture cho xe tăng
+        diry = -1;
+        if (pRenderer)
+        {
+            //spriteSheet = loadTexture("player_move.png", pRenderer);
+            if (spriteSheet)
+            {
+                SDL_QueryTexture(spriteSheet, NULL, NULL, &frameWidth, &frameHeight);
+                frameWidth /= 6;
+                frameHeight /= 4;
+            }
+        }
+        //texture = loadTexture(imagePath, renderer);  // Tải texture cho xe tăng
+        lastFrameTime = SDL_GetTicks();
     }
-
     // Hàm tải ảnh thành texture
     SDL_Texture* loadTexture(const string& path, SDL_Renderer* renderer)
     {
@@ -179,7 +239,7 @@ public:
         SDL_FreeSurface(surface);
         return texture;
     }
-    void move(int dx,int dy,const vector<wall>& walls)
+    void move(int dx,int dy,const vector<wall>& walls,const vector<DestructibleWall>& destructibleWalls)
     {
         int newx=x+dx;
         int newy=y+dy;
@@ -193,6 +253,13 @@ public:
                 return;
             }
         }
+        for(int i=0;i<destructibleWalls.size();i++)
+        {
+            if(destructibleWalls[i].active and SDL_HasIntersection(&newrect, &destructibleWalls[i].rect))
+            {
+                return;
+            }
+        }
         if(newx>=0 and newx<=SCREEN_WIDTH and newy>=0 and newy<=SCREEN_HEIGHT)
         {
             x=newx;
@@ -200,16 +267,28 @@ public:
             rect.x=x;
             rect.y=y;
         }
+        if (dx < 0)
+            currentDirection = 0; // Trái
+        else if (dx > 0)
+            currentDirection = 1; // Phải
+        else if (dy > 0)
+            currentDirection = 2; // Dưới
+        else if (dy < 0)
+            currentDirection = 3; // Lên
+    }
+    void update() {
+        Uint32 currentTime = SDL_GetTicks();
+        if (currentTime - lastFrameTime >= frameDelay) {
+            currentFrame = (currentFrame + 1) % 6; // 6 frames mỗi hướng
+            lastFrameTime = currentTime;
+        }
     }
     void render(SDL_Renderer* renderer)
     {
-        if (texture)  // Kiểm tra xem texture có hợp lệ không
-        {
-            SDL_RenderCopy(renderer, texture, NULL, &rect);  // Vẽ xe tăng lên màn hình
-        }
-        else
-        {
-            // Nếu texture không hợp lệ, có thể vẽ hình chữ nhật dự phòng
+       if (spriteSheet) {
+            SDL_Rect srcRect = {currentFrame * frameWidth, currentDirection * frameHeight, frameWidth, frameHeight};
+            SDL_RenderCopy(renderer, spriteSheet, &srcRect, &rect);
+        } else { // Vẽ hình chữ nhật dự phòng nếu không có sprite sheet
             SDL_SetRenderDrawColor(renderer, 255, 255, 0, 255);
             SDL_RenderFillRect(renderer, &rect);
         }
@@ -217,31 +296,86 @@ public:
         {
             bullet.render(renderer);
         }
+    }
+    void handleInput(SDL_Event &e) {
+       // Xử lý sự kiện cho player (di chuyển, bắn, ...)
 
+        if (e.type == SDL_KEYDOWN) {
+
+             if (e.key.keysym.sym==SDLK_SPACE)
+            {
+                isShooting = true;
+            }
+
+
+
+        } else if (e.type == SDL_KEYUP) {
+              if (e.key.keysym.sym==SDLK_SPACE)
+            {
+               isShooting = false;
+
+            }
+
+        }
     }
 };
 class enemytank
 {
 public:
+    // Animation
+    SDL_Texture* spriteSheet = nullptr;
+    int currentFrame = 0;
+    Uint32 lastFrameTime = 0;
+    int frameDelay = 100; // Điều chỉnh giá trị này nếu cần
+    int currentDirection = 0; // 0: trái, 1: phải, 2: dưới, 3: trên
+    int frameWidth;
+    int frameHeight;
+    SDL_Renderer *pRenderer;
     int x,y;
     int dirx,diry;
-    int movedelay=0,shootdelay;
+    int movedelay,shootdelay;
     SDL_Rect rect;
     bool active;
     vector<bullet> bullets;
     SDL_Texture* texture;  // Thêm texture cho xe tăng kẻ thù
 
-    enemytank(int startx, int starty, SDL_Renderer* renderer, const string& imagePath)
+    enemytank(int startx, int starty, SDL_Renderer* renderer)
     {
+        movedelay=15;
+        shootdelay=5;
         x = startx;
         y = starty;
         rect = {x, y, TILE_SIZE, TILE_SIZE};
         dirx = 0;
         diry = -1;
         active = true;
-        texture = loadTexture(imagePath, renderer);  // Tải texture cho xe tăng kẻ thù
+        pRenderer=renderer;
+        if (pRenderer)
+        {
+            spriteSheet = loadTexture("enemy_move.png", pRenderer);
+            if (!spriteSheet)
+            {
+                cerr << "Không thể tải sprite sheet enemy: " << IMG_GetError() << endl;
+            }
+            else
+            {
+                SDL_QueryTexture(spriteSheet, NULL, NULL, &frameWidth, &frameHeight);
+                frameWidth /= 6; // 6 frame mỗi hàng
+                frameHeight /= 4; // 4 hàng
+            }
+            //texture = loadTexture(imagePath, renderer);
+        }
+         lastFrameTime = SDL_GetTicks();
     }
-
+    void update()
+    {
+        Uint32 currentTime = SDL_GetTicks();
+        if (currentTime - lastFrameTime >= frameDelay)
+        {
+            currentFrame = (currentFrame + 1) % 6;
+            lastFrameTime = currentTime;
+        }
+    }
     // Hàm tải ảnh thành texture
     SDL_Texture* loadTexture(const string& path, SDL_Renderer* renderer)
     {
@@ -264,29 +398,16 @@ public:
     }
     void move(const vector<wall>& walls, const playertank& player, SDL_Renderer* renderer)
     {
-        if(--movedelay>0) return;
-        movedelay=30;
-        // Tính toán khoảng cách đến người chơi
-        float dx = player.x - x;
-        float dy = player.y - y;
-        float distance = sqrt(dx * dx + dy * dy);
 
-        // Nếu đủ gần, di chuyển theo hướng người chơi
-        if (distance < 200)
-        {   // Điều chỉnh giá trị này cho phù hợp
-            double angle = atan2(dy, dx);
-            dirx = 5 * cos(angle);
-            diry = 5 * sin(angle);
-        }
-        else
+        if(--movedelay>0) return;
+        movedelay=15;
+        int r=rand()%4;
+        //up
+        if(r==0)
         {
-            int r=rand()%4;
-            //up
-            if(r==0)
-            {
-                this->dirx=0;
-                this->diry=-5;
-            }
+            this->dirx=0;
+            this->diry=-5;
+        }
             //down
             else if(r==1)
             {
@@ -305,7 +426,7 @@ public:
                 this->dirx=5;
                 this->diry=0;
             }
-        }
+
         int newx=x+this->dirx;
         int newy=y+this->diry;
         SDL_Rect newrect={newx,newy,TILE_SIZE,TILE_SIZE};
@@ -316,16 +437,26 @@ public:
                 return;
             }
         }
-        if(newx>=TILE_SIZE and newx<=SCREEN_WIDTH-TILE_SIZE*2 and newy>=TILE_SIZE and newy<=SCREEN_HEIGHT-TILE_SIZE*2)
+        if(newx>=0 and newx<=SCREEN_WIDTH and newy>=0 and newy<=SCREEN_HEIGHT)
         {
             x=newx;
             y=newy;
             rect.x=x;
             rect.y=y;
         }
+         // Cập nhật hướng di chuyển cho animation
+        if (dirx < 0)
+            currentDirection = 0; // Trái
+        else if (dirx > 0)
+            currentDirection = 1; // Phải
+        else if (diry > 0)
+            currentDirection = 2; // Dưới
+        else if (diry < 0)
+            currentDirection = 3; // Lên
     }
     void shoot(SDL_Renderer* renderer, const string& bulletTexturePath)
     {
+        //cout<<shootdelay<<"\n";
         if (--shootdelay > 0) return;
         shootdelay = 5;
         // Tạo đạn cho kẻ thù, sử dụng hàm tải texture cho đạn của kẻ thù
@@ -341,10 +472,15 @@ public:
     }
     void render(SDL_Renderer* renderer)
     {
-        if (texture)  // Kiểm tra xem texture có hợp lệ không
-        {
-            SDL_RenderCopy(renderer, texture, NULL, &rect);  // Vẽ xe tăng kẻ thù lên màn hình
-        }
+         if (spriteSheet)
+         {
+            SDL_Rect srcRect = {currentFrame * frameWidth, currentDirection * frameHeight, frameWidth, frameHeight};
+             SDL_RenderCopy(renderer, spriteSheet, &srcRect, &rect);
+
+         }
+         else if (texture) { // Vẽ texture dự phòng nếu không có sprite sheet
+             SDL_RenderCopy(renderer, texture, NULL, &rect);
+         }
         for(auto& bullet:bullets)
         {
             bullet.render(renderer);
@@ -353,6 +489,21 @@ public:
 };
 class Game
 {
+    private:
+    TTF_Font* gFont;
+    SDL_Rect playRect, exitRect, introRect; // Rect cho các chữ trong menu
+    SDL_Texture *playTexture, *exitTexture, *introTexture;
+    SDL_Texture* backButtonTexture = nullptr; // Texture của nút Back
+    SDL_Rect backButtonRect;          // Rect của nút Back
+    SDL_Texture* introImage = nullptr; // Texture hình ảnh hướng dẫn
+    SDL_Rect introImageRect;   // Rect của hình ảnh
+    TTF_Font* livesnanmoFont;
+    SDL_Texture* ammoTexture = nullptr;
+    SDL_Texture* livesTexture = nullptr;
+    SDL_Rect ammoRect;
+    SDL_Rect livesRect;
+    vector<Buff> buffs;
+    vector<DestructibleWall> destructibleWalls;
     public:
     SDL_Window* window;
     SDL_Renderer* renderer;
@@ -361,7 +512,7 @@ class Game
     bool inmenu;
     vector<wall> walls;
     playertank player;
-    int enemynumber=3;
+    int enemynumber=5;
     vector<enemytank> enemies;
     void generatewalls()
     {
@@ -374,7 +525,10 @@ class Game
                     wall w = wall(j * TILE_SIZE, 40+i * TILE_SIZE, renderer, "wall.png");
                     walls.push_back(w);
                 }
-
+                if(mapp[i][j]==4)
+                {
+                     destructibleWalls.push_back(DestructibleWall(j * TILE_SIZE, 40+i * TILE_SIZE, renderer, "breakable_wall.png"));
+                }
             }
         }
     }
@@ -398,7 +552,7 @@ class Game
         return texture;
     }
 
-    Game():player(0, 80, nullptr, "player_tank.png")
+    Game():player(0, 80, nullptr)
     {
         running=1;
         pause=0;
@@ -426,9 +580,64 @@ class Game
             cerr << "SDL_image could not initialize! SDL_image Error: " << IMG_GetError() <<"\n";
             running = 0;
         }
-        player.texture = player.loadTexture("player_tank.png", renderer);
+        //player.texture = player.loadTexture("player_tank.png", renderer); // Tải texture dự phòng
+        player.spriteSheet = player.loadTexture("player_move.png", renderer); // Tải sprite sheet
+        if (player.spriteSheet)
+        {
+            SDL_QueryTexture(player.spriteSheet, NULL, NULL, &player.frameWidth, &player.frameHeight);
+            player.frameWidth /= 6;
+            player.frameHeight /= 4;
+        }
+        else
+        {
+             cerr << "Không thể tải sprite sheet: " << IMG_GetError() << endl;
+
+        }
+        // Khởi tạo SDL_ttf
+        if (TTF_Init() == -1)
+        {
+            cerr << "SDL_ttf could not initialize! SDL_ttf Error: " << TTF_GetError() << "\n";
+            running = false;
+            return; // Hoặc xử lý lỗi theo cách khác
+        }
+        gFont = TTF_OpenFont("menufont.ttf", 50);  // Tải font
+        if (gFont == NULL) {
+            cerr << "Failed to load lazy font! SDL_ttf Error: " << TTF_GetError() << "\n";
+            running = 0;
+            return;
+        }
+        livesnanmoFont = TTF_OpenFont("normal.ttf", 10);  // Tải font
+        if (livesnanmoFont == NULL) {
+            cerr << "Failed to load lazy font! SDL_ttf Error: " << TTF_GetError() << "\n";
+            running = 0;
+            return;
+        }
+        // Tải texture cho chữ PLAY
+        SDL_Color textColor = { 255, 255, 255 }; // Màu trắng
+        SDL_Surface* playSurface = TTF_RenderText_Solid(gFont, "PLAY", textColor);
+        SDL_Surface* exitSurface = TTF_RenderText_Solid(gFont, "EXIT", textColor);
+        SDL_Surface* introSurface = TTF_RenderText_Solid(gFont, "INTRODUCTION", textColor);
+        if (playSurface&&exitSurface&&introSurface)
+        {
+            playTexture=SDL_CreateTextureFromSurface(renderer,playSurface);
+            exitTexture=SDL_CreateTextureFromSurface(renderer,exitSurface);
+            introTexture=SDL_CreateTextureFromSurface(renderer,introSurface);
+            playRect = { (SCREEN_WIDTH - playSurface->w) / 2, 200, playSurface->w, playSurface->h };
+            exitRect = { (SCREEN_WIDTH - exitSurface->w) / 2, 300, exitSurface->w, exitSurface->h };
+            introRect = { (SCREEN_WIDTH - introSurface->w) / 2, 400, introSurface->w, introSurface->h };
+            SDL_FreeSurface(playSurface);
+            SDL_FreeSurface(exitSurface);
+            SDL_FreeSurface(introSurface);
+        }
+        /*introImage= loadTexture("instruction.png");
+        if (!introImage)
+        {
+            cerr << "Không tải được ảnh hướng dẫn: " << IMG_GetError() << endl;
+        }*/
+        introImageRect= {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
         generatewalls();
         spawnenemies();
+        generateBuffs();
     }
     //menu trước khi vào game
     void renderMenu()
@@ -442,55 +651,141 @@ class Game
         }
         // Vẽ ảnh nền menu
         SDL_RenderCopy(renderer, backgroundTexture, NULL, NULL);
-        // Tạo một rectangle để chứa các nút
-        SDL_Rect startButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 - 50, 200, 100 };
-        SDL_Rect quitButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 + 50, 200, 100 };
-
-        // Vẽ các nút bấm
-        SDL_RenderFillRect(renderer, &startButton);
-        SDL_RenderFillRect(renderer, &quitButton);
-
-        // Vẽ chữ cho các nút (Có thể dùng SDL_ttf để vẽ chữ thay vì dùng hình ảnh)
-        SDL_Texture* startTexture = loadTexture("start_button.png");
-        SDL_Texture* quitTexture = loadTexture("quit_button.png");
-
-        // Vẽ texture
-        SDL_RenderCopy(renderer, startTexture, NULL, &startButton);
-        SDL_RenderCopy(renderer, quitTexture, NULL, &quitButton);
-
+        if (playTexture && exitTexture && introTexture)
+        {
+            SDL_RenderCopy(renderer, playTexture, NULL, &playRect);
+            SDL_RenderCopy(renderer, exitTexture, NULL, &exitRect);
+            SDL_RenderCopy(renderer, introTexture, NULL, &introRect);
+        }
+        SDL_RenderPresent(renderer);
         // Hiển thị lên màn hình
         SDL_RenderPresent(renderer);
         SDL_DestroyTexture(backgroundTexture);
-        SDL_DestroyTexture(startTexture);
-        SDL_DestroyTexture(quitTexture);
     }
     void handleMenu()
     {
-        SDL_Rect startButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 - 50, 200, 100 };
-        SDL_Rect quitButton = { (SCREEN_WIDTH - 200) / 2, SCREEN_HEIGHT / 2 + 50, 200, 100 };
-        SDL_Event event;
-        while (SDL_PollEvent(&event))
+        SDL_Event e;
+        while (SDL_PollEvent(&e))
         {
-            if (event.type == SDL_QUIT)
+            if (e.type == SDL_MOUSEBUTTONDOWN)
             {
-                running = false;
-            }
-            else if (event.type == SDL_MOUSEBUTTONDOWN)
-            {
-                int mouseX = event.button.x;
-                int mouseY = event.button.y;
-                // Kiểm tra xem người dùng có nhấp vào nút Start không
-                if (mouseX >= startButton.x && mouseX <= startButton.x + startButton.w && mouseY >= startButton.y && mouseY <= startButton.y + startButton.h)
+                int x = e.button.x;
+                int y = e.button.y;
+                if (x >= playRect.x && x < playRect.x + playRect.w && y >= playRect.y && y < playRect.y + playRect.h)
                 {
                     inmenu = false; // Bắt đầu game
                 }
-                // Kiểm tra xem người dùng có nhấp vào nút Quit không
-                else if (mouseX >= quitButton.x && mouseX <= quitButton.x + quitButton.w && mouseY >= quitButton.y && mouseY <= quitButton.y + quitButton.h)
-                {
+                else if (x >= exitRect.x && x < exitRect.x + exitRect.w && y >= exitRect.y && y < exitRect.y + exitRect.h) {
                     running = false; // Thoát game
+                }
+                else if (x>=introRect.x && x <introRect.x + introRect.w && y>=introRect.y && y < introRect.y + introRect.h)
+                {
+                    introduction();
+                }
+            }
+         }
+    }
+    //intro
+    void introduction()
+    {
+        SDL_Event e;
+        bool quit = false;
+        SDL_Texture* introImage= loadTexture("instruction.png");//Load lại ảnh trong intro để tránh lỗi
+        if (!introImage)
+        {
+            cerr << "Không tải được ảnh hướng dẫn: " << IMG_GetError() <<endl;
+            return;
+        }
+        SDL_Texture *backButtonTexture = loadTexture("back.png");  // Load texture cho back button trong introduction
+        SDL_Rect backButtonRect;
+        if (!backButtonTexture)
+        {
+           cerr << "Không thể tạo texture cho back button \n";
+        }
+        else
+        {
+            SDL_QueryTexture(backButtonTexture, NULL, NULL, &backButtonRect.w, &backButtonRect.h);
+            backButtonRect.w /= 1.5; // Giảm kích thước nút Back nếu cần
+            backButtonRect.h /= 1.5;
+            backButtonRect.x = 10;
+            backButtonRect.y = 520;
+        }
+        while (!quit)
+        {
+            while (SDL_PollEvent(&e))
+            {
+                if (e.type == SDL_QUIT)
+                {
+                    running=false;
+                    quit= true;
+                }
+                else if(e.type == SDL_MOUSEBUTTONDOWN)
+                {
+                    //Lấy tọa độ chuột
+                    int x=e.button.x;
+                    int y = e.button.y;
+                    if (x >= backButtonRect.x && x <= backButtonRect.x + backButtonRect.w && y >= backButtonRect.y && y <= backButtonRect.y + backButtonRect.h)
+                    {
+                        quit= true;
+                    }
+               }
+            }
+            SDL_RenderClear(renderer);
+            SDL_Texture* backgroundTexture = loadTexture("menu_background.png");
+            SDL_RenderCopy(renderer, backgroundTexture, NULL, NULL);
+            SDL_RenderCopy(renderer, introImage, NULL, &introImageRect);
+            if(backButtonTexture!= nullptr)
+            {
+                SDL_RenderCopy(renderer,backButtonTexture,NULL,&backButtonRect);
+
+            }
+            SDL_RenderPresent(renderer);
+
+        }
+        inmenu = true;
+        SDL_DestroyTexture(introImage);
+        //SDL_DestroyTexture(backgroundTexture);
+        SDL_DestroyTexture(backButtonTexture);
+
+    }
+    //buffs
+    void generateBuffs()
+    {
+        for (int i = 0; i < 30; ++i)
+        {
+            for (int j = 0; j < 42; ++j)
+            {
+                if (mapp[i][j] == 3)
+                {
+                    buffs.push_back(Buff(j * TILE_SIZE, 40 + i * TILE_SIZE, renderer, "buff_ammo.png", Buff::AMMO));
+                }
+                else if (mapp[i][j] == 5)
+                {
+                    buffs.push_back(Buff(j * TILE_SIZE, 40 + i * TILE_SIZE, renderer, "buff_life.png", Buff::LIFE));
                 }
             }
         }
+    }
+    void handlebuff()
+    {
+        for (auto &buff:buffs)
+        {
+            if(SDL_HasIntersection(&player.rect,&buff.rect) && buff.active==true)
+            {
+                if(buff.type == Buff::AMMO)
+                {
+                    player.currentAmmo=player.currentAmmo+10;
+                    buff.active=false;
+
+                }
+                if(buff.type== Buff::LIFE)
+                {
+
+                    player.lives=std::min(player.lives+1,3);
+                    buff.active=false;
+                }
+             }
+         }
     }
     //enemiestank
     void spawnenemies()
@@ -513,8 +808,16 @@ class Game
                         break;
                     }
                 }
+                for(const auto& buff:buffs)
+                {
+                    if(buff.active && buff.x==ex && buff.y==ey)
+                    {
+                        validposition=0;
+                        break;
+                    }
+                }
             }
-            enemies.push_back(enemytank(ex, ey, renderer, "enemy_tank.png"));  // Khởi tạo kẻ thù với ảnh
+            enemies.push_back(enemytank(ex, ey, renderer));  // Khởi tạo kẻ thù với ảnh
         }
     }
     //pausegame
@@ -556,10 +859,43 @@ class Game
                     SDL_RenderFillRect(renderer, &tile);
                 }
             }
+             if (!livesnanmoFont) return; // Bỏ qua nếu font chưa được tải
+
+            SDL_Color textColor = {255, 255, 255};
+
+            // Hiển thị đạn
+            SDL_Surface* ammoSurface = TTF_RenderText_Solid(livesnanmoFont, ("Ammo: " + std::to_string(player.currentAmmo)).c_str(), textColor);
+             if (!ammoSurface)
+             {
+                 std::cerr << "Lỗi render text: " << TTF_GetError() << std::endl;
+                 return;
+             }
+            ammoTexture = SDL_CreateTextureFromSurface(renderer, ammoSurface);
+            ammoRect = {10, 10, ammoSurface->w, ammoSurface->h};
+            SDL_RenderCopy(renderer, ammoTexture, NULL, &ammoRect);
+            SDL_FreeSurface(ammoSurface);
+
+
+            // Hiển thị mạng
+            SDL_Surface* livesSurface = TTF_RenderText_Solid(livesnanmoFont, ("Lives: " + std::to_string(player.lives)).c_str(), textColor);
+            if (!livesSurface)
+             {
+                 std::cerr << "Lỗi render text: " << TTF_GetError() << std::endl;
+                 return;
+             }
+            livesTexture = SDL_CreateTextureFromSurface(renderer, livesSurface);
+            livesRect = {10, 30, livesSurface->w, livesSurface->h}; // Vị trí bên dưới đạn
+            SDL_RenderCopy(renderer, livesTexture, NULL, &livesRect);
+            SDL_FreeSurface(livesSurface);
             //wall
             for(int i=0;i<walls.size();i++)
             {
                 walls[i].render(renderer);
+            }
+            for (auto& destructibleWall: destructibleWalls)
+            {
+                destructibleWall.render(renderer);
+
             }
             //player
             player.render(renderer);
@@ -567,6 +903,11 @@ class Game
             for(auto& enemy:enemies)
             {
                 enemy.render(renderer);
+            }
+            //buffs
+            for (auto& buff : buffs)
+            {
+                buff.render(renderer);
             }
         }
         else {pausegame();}
@@ -579,25 +920,26 @@ class Game
         SDL_Event event;
         while(SDL_PollEvent(&event))
         {
+            player.handleInput(event);
             if(event.type==SDL_QUIT)
             {
                 running=0;
             }
             if (keystates[SDL_SCANCODE_UP])
             {
-                player.move(0, -5, walls);
+                player.move(0, -5, walls, destructibleWalls);
             }
             if (keystates[SDL_SCANCODE_DOWN])
             {
-                player.move(0, 5, walls);
+                player.move(0, 5, walls, destructibleWalls);
             }
             if (keystates[SDL_SCANCODE_LEFT])
             {
-                player.move(-5, 0, walls);
+                player.move(-5, 0, walls, destructibleWalls);
             }
             if (keystates[SDL_SCANCODE_RIGHT])
             {
-                player.move(5, 0, walls);
+                player.move(5, 0, walls, destructibleWalls);
             }
             if (keystates[SDL_SCANCODE_SPACE])
             {
@@ -644,6 +986,8 @@ class Game
     {
         if(pause==0)
         {
+            player.update(); // Cập nhật animation của player
+            handlebuff();
             player.updatebullets();
             for(auto &bullet:player.bullets)
             {
@@ -652,6 +996,15 @@ class Game
                     if(wall.active && SDL_HasIntersection(&bullet.rect,&wall.rect))
                     {
                         //wall.active=0;
+                        bullet.active=0;
+                        break;
+                    }
+                }
+                for (auto& wall : destructibleWalls)
+                {
+                    if(wall.active && SDL_HasIntersection(&bullet.rect,&wall.rect))
+                    {
+                        wall.active=0;
                         bullet.active=0;
                         break;
                     }
@@ -671,6 +1024,7 @@ class Game
             }
             for(auto& enemy:enemies)
             {
+                enemy.update(); // Cập nhật animation của enemy
                 enemy.move(walls, player, renderer);
                 enemy.updatebullets();
                 if(rand()%100<2)
@@ -724,21 +1078,27 @@ class Game
                 {
                     if(SDL_HasIntersection(&bullet.rect,&player.rect))
                     {
-                        SDL_Texture* loseTexture = loadTexture("lose.png");
-                        if (!loseTexture)
+                        player.lives--;//trừ mạng
+                        bullet.active = 0; // Xóa đạn
+                        if(player.lives<=0)
                         {
-                            cerr << "Không tìm thấy ảnh lose: " << IMG_GetError() << endl;
-                            return;
+                            SDL_Texture* loseTexture = loadTexture("lose.png");
+                            if (!loseTexture)
+                            {
+                                cerr << "Không tìm thấy ảnh lose: " << IMG_GetError() << endl;
+                                return;
+                            }
+                            // Vẽ ảnh thua lên màn hình
+                            SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+                            SDL_RenderCopy(renderer, loseTexture, NULL, &destRect);
+                            SDL_RenderPresent(renderer);
+                            // Giữ màn hình thua trong 3 giây
+                            SDL_Delay(3000);
+                            SDL_DestroyTexture(loseTexture);
+                            running=0;
+                            return ;
                         }
-                        // Vẽ ảnh thua lên màn hình
-                        SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-                        SDL_RenderCopy(renderer, loseTexture, NULL, &destRect);
-                        SDL_RenderPresent(renderer);
-                        // Giữ màn hình thua trong 3 giây
-                        SDL_Delay(3000);
-                        SDL_DestroyTexture(loseTexture);
-                        running=0;
-                        return ;
+
                     }
                 }
             }
@@ -768,7 +1128,13 @@ class Game
     }
     ~Game()
     {
+        TTF_CloseFont(gFont);
+        SDL_DestroyTexture(ammoTexture);
+        SDL_DestroyTexture(livesTexture);
+        SDL_DestroyTexture(playTexture);
         SDL_DestroyRenderer(renderer);
+        SDL_DestroyTexture(backButtonTexture);
+        SDL_DestroyTexture(introImage);
         SDL_DestroyWindow(window);
         SDL_Quit();
         IMG_Quit();
@@ -796,24 +1162,3 @@ int main(int argc, char* argv[])
     }
     return 0;
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
