@@ -64,7 +64,8 @@ class DestructibleWall : public wall
 public:
     DestructibleWall(int startx, int starty, SDL_Renderer* renderer, const string& imagePath) : wall(startx,starty,renderer,imagePath){}
 };
-class Buff {
+class Buff
+{
 public:
     enum BuffType { AMMO, LIFE };
     int x, y;
@@ -175,7 +176,7 @@ public:
     int currentFrame = 0;
     Uint32 lastFrameTime = 0;
     int frameDelay = 100;
-    int currentDirection = 0; // 0: trái, 1: phải, 2: dưới, 3: trên
+    int currentDirection = 1; // 0: trái, 1: phải, 2: dưới, 3: trên
     int frameWidth;
     int frameHeight;
     SDL_Renderer* pRenderer=nullptr; // Lưu trữ renderer
@@ -276,16 +277,19 @@ public:
         else if (dy < 0)
             currentDirection = 3; // Lên
     }
-    void update() {
+    void update()
+    {
         Uint32 currentTime = SDL_GetTicks();
-        if (currentTime - lastFrameTime >= frameDelay) {
-            currentFrame = (currentFrame + 1) % 6; // 6 frames mỗi hướng
+        if (currentTime - lastFrameTime >= frameDelay)
+        {
+            currentFrame = (currentFrame + 1) % 2; // 6 frames mỗi hướng
             lastFrameTime = currentTime;
         }
     }
     void render(SDL_Renderer* renderer)
     {
-       if (spriteSheet) {
+       if (spriteSheet)
+        {
             SDL_Rect srcRect = {currentFrame * frameWidth, currentDirection * frameHeight, frameWidth, frameHeight};
             SDL_RenderCopy(renderer, spriteSheet, &srcRect, &rect);
         } else { // Vẽ hình chữ nhật dự phòng nếu không có sprite sheet
@@ -317,6 +321,155 @@ public:
             }
 
         }
+    }
+};
+class Boss
+{
+private:
+    // Animation
+
+        int currentFrame = 0;
+        Uint32 lastFrameTime = 0;
+        int frameDelay = 300;
+
+public:
+    int currentDirection = 0;
+    int frameWidth;
+    int frameHeight;
+    SDL_Renderer *pRenderer=nullptr;
+    SDL_Texture *spriteSheet = nullptr; //Thêm cho boss animation.
+    int x, y;
+    int dirx,diry;
+    int health = 10;
+    int movedelay;
+    SDL_Rect rect;
+    SDL_Texture* texture;
+    vector<bullet> boss_bullets;
+    int shootDelay = 187; // 3 giây (3s * 60fps = 180 frames)
+    Boss(int startx, int starty, SDL_Renderer* renderer, const string& imagePath) : x(startx), y(starty)
+    {
+        pRenderer = renderer;
+        if (pRenderer)
+        {
+            spriteSheet = loadTexture("boss.png", pRenderer);
+            if (!spriteSheet)
+            {
+               cerr<<"Không thể tải spriteSheet boss: "<< IMG_GetError() << endl;
+            }
+            else
+            {
+                SDL_QueryTexture(spriteSheet, NULL, NULL, &frameWidth, &frameHeight);
+                frameWidth /= 24;
+                frameHeight /= 1; // Chỉ có 1 hàng, 24 frame
+            }
+        }
+        rect = { x, y, 30, 30};
+        texture = loadTexture(imagePath, renderer);
+        lastFrameTime = SDL_GetTicks();
+    }
+    SDL_Texture* loadTexture(const string& path, SDL_Renderer* renderer)
+    {
+        SDL_Surface* surface = IMG_Load(path.c_str());
+        if (!surface)
+        {
+            cerr << "Không thể tải ảnh: " << IMG_GetError() << endl;
+            return nullptr;
+        }
+
+        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
+        SDL_FreeSurface(surface);
+        return texture;
+    }
+    void updatebullet(SDL_Renderer *renderer)
+    {
+        Uint32 currentTime = SDL_GetTicks();
+        if(currentTime - lastFrameTime >=frameDelay)
+        {
+            currentFrame= (currentFrame+1)%10; //Cho boss animation
+            lastFrameTime = currentTime;
+        }
+        shootDelay--;
+        if (shootDelay <= 0)
+        {
+            shootDelay = 150; // Reset shootDelay
+            // Bắn đạn tản ra xung quanh
+            boss_bullets.push_back(bullet(x + rect.w / 2 - 5, y + rect.h / 2 - 5, 0, -5, renderer, "boss_bullet.png")); // Lên
+            boss_bullets.push_back(bullet(x + rect.w / 2 - 5, y + rect.h / 2 - 5, 0, 5, renderer, "boss_bullet.png")); // Xuống
+            boss_bullets.push_back(bullet(x + rect.w / 2 - 5, y + rect.h / 2 - 5, -5, 0, renderer, "boss_bullet.png")); // Trái
+            boss_bullets.push_back(bullet(x + rect.w / 2 - 5, y + rect.h / 2 - 5, 5, 0, renderer, "boss_bullet.png")); // Phải
+        }
+        //update bullets
+        for (auto &bullet : boss_bullets)
+        {
+            bullet.move();
+        }
+        boss_bullets.erase(std::remove_if(boss_bullets.begin(),boss_bullets.end(),[](bullet &b){return !b.active;}),boss_bullets.end());
+    }
+    void move(const vector<wall>& walls, const playertank& player, SDL_Renderer* renderer)
+    {
+
+        if(--movedelay>0) return;
+        movedelay=15;
+        int r=rand()%4;
+        //up
+        if(r==0)
+        {
+            this->dirx=0;
+            this->diry=-5;
+        }
+            //down
+            else if(r==1)
+            {
+                this->dirx=0;
+                this->diry=5;
+            }
+            //left
+            else if(r==2)
+            {
+                this->dirx=-5;
+                this->diry=0;
+            }
+            //right
+            else
+            {
+                this->dirx=5;
+                this->diry=0;
+            }
+
+        int newx=x+this->dirx;
+        int newy=y+this->diry;
+        SDL_Rect newrect={newx,newy,TILE_SIZE,TILE_SIZE};
+        for(int i=0;i<walls.size();i++)
+        {
+            if(walls[i].active and SDL_HasIntersection(&newrect, &walls[i].rect))
+            {
+                return;
+            }
+        }
+        if(newx>=0 and newx<=SCREEN_WIDTH and newy>=0 and newy<=SCREEN_HEIGHT)
+        {
+            x=newx;
+            y=newy;
+            rect.x=x;
+            rect.y=y;
+        }
+    }
+    void render(SDL_Renderer *renderer)
+    {
+        if (spriteSheet)
+        {
+            SDL_Rect srcRect = { currentFrame * frameWidth, currentDirection * frameHeight, frameWidth, frameHeight };
+            SDL_RenderCopy(renderer, spriteSheet, &srcRect, &rect);
+        }
+        else if(texture)
+        {
+            SDL_RenderCopy(renderer, texture, NULL, &rect); //Vẽ texture thường nếu ko có spriteSheet
+        }
+        for (auto& bullet:boss_bullets)
+        {
+            bullet.render(renderer);
+        }
+
     }
 };
 class enemytank
@@ -512,6 +665,7 @@ class Game
     bool inmenu;
     vector<wall> walls;
     playertank player;
+    Boss* boss=nullptr;
     int enemynumber=5;
     vector<enemytank> enemies;
     void generatewalls()
@@ -552,7 +706,7 @@ class Game
         return texture;
     }
 
-    Game():player(0, 80, nullptr)
+    Game():player(0, 80, nullptr),boss(nullptr)
     {
         running=1;
         pause=0;
@@ -638,6 +792,7 @@ class Game
         generatewalls();
         spawnenemies();
         generateBuffs();
+        spawnBoss();
     }
     //menu trước khi vào game
     void renderMenu()
@@ -819,6 +974,19 @@ class Game
             enemies.push_back(enemytank(ex, ey, renderer));  // Khởi tạo kẻ thù với ảnh
         }
     }
+    //boss
+    void spawnBoss()
+    {
+        int bx=730;//Thay giá trị tọa độ để hiển thị boss lên màn hình.
+        int by = 200;
+        boss = new Boss(bx, by, renderer, "boss.png");
+        if(boss->spriteSheet)
+        {
+            SDL_QueryTexture(boss->spriteSheet,NULL, NULL, &boss->frameWidth, &boss->frameHeight);
+            boss->frameWidth/=24;//Số frame theo chiều ngang
+            boss->frameHeight/=1;
+        }
+    }
     //pausegame
     void pausegame()
     {
@@ -873,8 +1041,6 @@ class Game
             ammoRect = {10, 10, ammoSurface->w, ammoSurface->h};
             SDL_RenderCopy(renderer, ammoTexture, NULL, &ammoRect);
             SDL_FreeSurface(ammoSurface);
-
-
             // Hiển thị mạng
             SDL_Surface* livesSurface = TTF_RenderText_Solid(livesnanmoFont, ("Lives: " + std::to_string(player.lives)).c_str(), textColor);
             if (!livesSurface)
@@ -898,6 +1064,11 @@ class Game
             }
             //player
             player.render(renderer);
+            //boss
+            if(boss)
+            {
+                boss->render(renderer);
+            }
             //enemy
             for(auto& enemy:enemies)
             {
@@ -950,37 +1121,6 @@ class Game
             }
         }
     }
-    // Hiển thị màn hình thắng
-    void renderWin()
-    {
-        SDL_Texture* winTexture = loadTexture("win.png");
-        if (!winTexture)
-        {
-            cerr << "Không tìm thấy ảnh win: " << IMG_GetError() << "\n";
-            return;
-        }
-
-        SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-        SDL_RenderCopy(renderer, winTexture, NULL, &destRect);
-        SDL_RenderPresent(renderer);
-        SDL_DestroyTexture(winTexture);
-    }
-
-    // Hiển thị màn hình thua
-    void renderLose()
-    {
-        SDL_Texture* loseTexture = loadTexture("lose.png");
-        if (!loseTexture)
-        {
-            cerr << "Không tìm thấy ảnh lose: " << IMG_GetError() << "\n";
-            return;
-        }
-
-        SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-        SDL_RenderCopy(renderer, loseTexture, NULL, &destRect);
-        SDL_RenderPresent(renderer);
-        SDL_DestroyTexture(loseTexture);
-    }
     void update()
     {
         if(pause==0)
@@ -988,6 +1128,58 @@ class Game
             player.update(); // Cập nhật animation của player
             handlebuff();
             player.updatebullets();
+            if(boss)
+            {
+                boss->move(walls, player, renderer);
+                boss->updatebullet(renderer);
+                for (auto &bullet : boss->boss_bullets)
+                {
+                    if (SDL_HasIntersection(&bullet.rect, &player.rect))
+                    {
+                        player.lives--;
+                        bullet.active = false;
+                        if(player.lives<=0)
+                        {
+                            SDL_Texture* loseTexture = loadTexture("lose.png");
+                            if (!loseTexture)
+                            {
+                                cerr << "Không tìm thấy ảnh lose: " << IMG_GetError() << endl;
+                                return;
+                            }
+                            // Vẽ ảnh thua lên màn hình
+                            SDL_Rect destRect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+                            SDL_RenderCopy(renderer, loseTexture, NULL, &destRect);
+                            SDL_RenderPresent(renderer);
+                            // Giữ màn hình thua trong 3 giây
+                            SDL_Delay(3000);
+                            SDL_DestroyTexture(loseTexture);
+                            running=0;
+                            return ;
+                        }
+                        break;
+                    }
+                    for(auto& wall:walls)
+                    {
+                        if(SDL_HasIntersection(&wall.rect,&bullet.rect))
+                        {
+                            bullet.active=0;
+                        }
+                    }
+                }
+            }
+            for (auto& bullet : player.bullets)
+            {
+                if (boss && SDL_HasIntersection(&bullet.rect, &boss->rect))
+                {
+                    boss->health--;
+                    bullet.active = 0;//Hủy đạn
+                    if (boss->health <= 0)
+                    {
+                        //delete boss;//xóa boss
+                        boss = nullptr; // reset lại biến boss về nullptr
+                    }
+                }
+            }
             for(auto &bullet:player.bullets)
             {
                 for(auto& wall:walls)
@@ -1056,7 +1248,7 @@ class Game
             }
             enemies.erase(std::remove_if(enemies.begin(),enemies.end(),[](enemytank &e){return !e.active;}),enemies.end());
             // Kiểm tra nếu thắng (không còn kẻ thù)
-            if (enemies.empty())
+            if (enemies.empty() && !boss)
             {
                 // Tải ảnh chiến thắng
                 SDL_Texture* winTexture = loadTexture("win.png");
