@@ -710,6 +710,16 @@ class Game
             backButtonRect.x = 10;
             backButtonRect.y = 520;
         }
+        SDL_RenderClear(renderer);
+        SDL_Texture* backgroundTexture = loadTexture("menu_background.png");
+        //SDL_RenderCopy(renderer, backgroundTexture, NULL, NULL);
+        SDL_RenderCopy(renderer, introImage, NULL, &introImageRect);
+        if(backButtonTexture!= nullptr)
+        {
+            SDL_RenderCopy(renderer,backButtonTexture,NULL,&backButtonRect);
+
+        }
+        SDL_RenderPresent(renderer);
         while (!quit)
         {
             while (SDL_PollEvent(&e))
@@ -730,17 +740,6 @@ class Game
                     }
                }
             }
-            SDL_RenderClear(renderer);
-            SDL_Texture* backgroundTexture = loadTexture("menu_background.png");
-            SDL_RenderCopy(renderer, backgroundTexture, NULL, NULL);
-            SDL_RenderCopy(renderer, introImage, NULL, &introImageRect);
-            if(backButtonTexture!= nullptr)
-            {
-                SDL_RenderCopy(renderer,backButtonTexture,NULL,&backButtonRect);
-
-            }
-            SDL_RenderPresent(renderer);
-
         }
         inmenu = true;
         SDL_DestroyTexture(introImage);
@@ -1043,6 +1042,14 @@ class Game
                             //wall.active=0;
                             bullet.active=0;
                             break;
+                        }
+                    }
+                    for(auto& bulletp:player.bullets)
+                    {
+                        if(SDL_HasIntersection(&bullet.rect,&bulletp.rect))
+                        {
+                            bullet.active=0;
+                            bulletp.active=0;
                         }
                     }
                 }
