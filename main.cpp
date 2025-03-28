@@ -6,6 +6,7 @@
 #include <fstream>
 #include<cmath>
 #include <SDL_ttf.h>
+#include <SDL_mixer.h>
 using namespace std;
 // Kích thước cửa sổ và các thông số game
 const int SCREEN_WIDTH = 840;
@@ -154,7 +155,7 @@ public:
         y=y+dy/4;
         rect.x=x;
         rect.y=y;
-        if(x<=0 || x>=SCREEN_WIDTH || y<=0 || y>=SCREEN_HEIGHT)
+        if(x<=10 || x>=SCREEN_WIDTH || y<=10 || y>=SCREEN_HEIGHT)
         {
             active=0;
         }
@@ -171,6 +172,9 @@ public:
 class playertank
 {
 public:
+    //sound
+    Mix_Chunk *shootSound = nullptr;
+    Mix_Chunk *hurtSound = nullptr;
     // Animation
     SDL_Texture* spriteSheet = nullptr;
     int currentFrame = 0;
@@ -193,9 +197,11 @@ public:
     {
         if (currentAmmo > 0 && isShooting==true)
         {
+            Mix_PlayChannel(-1, shootSound, 0);
             bullets.push_back(bullet(x + TILE_SIZE / 2 - 5, y + TILE_SIZE / 2 - 5, this->dirx, this->diry, renderer, texturePath));
             currentAmmo--;
             isShooting = false; // Đặt lại cờ isShooting sau khi bắn
+
         }
     }
     void updatebullets()
@@ -224,6 +230,8 @@ public:
             }
         }
         //texture = loadTexture(imagePath, renderer);  // Tải texture cho xe tăng
+        shootSound = Mix_LoadWAV("playershoot.wav");
+        hurtSound = Mix_LoadWAV("hurt.wav");
         lastFrameTime = SDL_GetTicks();
     }
     // Hàm tải ảnh thành texture
@@ -322,17 +330,22 @@ public:
 
         }
     }
+    void playhurtSound()
+    {
+        Mix_PlayChannel(-1, hurtSound, 0);
+    }
 };
 class Boss
 {
 private:
     // Animation
-
-        int currentFrame = 0;
-        Uint32 lastFrameTime = 0;
-        int frameDelay = 300;
+    int currentFrame = 0;
+    Uint32 lastFrameTime = 0;
+    int frameDelay = 300;
 
 public:
+    SDL_Rect healthBarRect;            // Rect cho thanh máu
+    SDL_Color healthColor;
     int currentDirection = 0;
     int frameWidth;
     int frameHeight;
@@ -364,6 +377,10 @@ public:
             }
         }
         rect = { x, y, 30, 30};
+        healthBarRect.x = x;
+        healthBarRect.y = y - 10;//vị trí healthbar so với boss
+        healthBarRect.w = rect.w;
+        healthBarRect.h = 5;
         texture = loadTexture(imagePath, renderer);
         lastFrameTime = SDL_GetTicks();
     }
@@ -380,7 +397,7 @@ public:
         SDL_FreeSurface(surface);
         return texture;
     }
-    void updatebullet(SDL_Renderer *renderer)
+    void update(SDL_Renderer *renderer)
     {
         Uint32 currentTime = SDL_GetTicks();
         if(currentTime - lastFrameTime >=frameDelay)
@@ -465,6 +482,24 @@ public:
         {
             SDL_RenderCopy(renderer, texture, NULL, &rect); //Vẽ texture thường nếu ko có spriteSheet
         }
+        SDL_SetRenderDrawColor(renderer,0,0,0,0);
+        //Vẽ thanh máu
+        if (health > 6)
+        {
+            healthColor = {0,255,0};
+        }
+        else if (health >3)
+        {
+                healthColor = {255,255,0};
+        }
+        else healthColor= {255,0,0};
+        SDL_SetRenderDrawColor(renderer, healthColor.r, healthColor.g, healthColor.b, 255);
+        healthBarRect.w = rect.w * (static_cast<double>(health) / 10);
+        healthBarRect.x = rect.x;
+        healthBarRect.y=rect.y-10;
+        SDL_RenderFillRect(renderer, &healthBarRect);
+        SDL_SetRenderDrawColor(renderer, 255,255,255,255);
+        SDL_RenderDrawRect(renderer,&healthBarRect);
         for (auto& bullet:boss_bullets)
         {
             bullet.render(renderer);
@@ -475,6 +510,8 @@ public:
 class enemytank
 {
 public:
+    //sound
+    Mix_Chunk* hit = nullptr;
     // Animation
     SDL_Texture* spriteSheet = nullptr;
     int currentFrame = 0;
@@ -518,7 +555,8 @@ public:
             }
             //texture = loadTexture(imagePath, renderer);
         }
-         lastFrameTime = SDL_GetTicks();
+        hit = Mix_LoadWAV("hit.wav");
+        lastFrameTime = SDL_GetTicks();
     }
     void update()
     {
@@ -639,6 +677,10 @@ public:
             bullet.render(renderer);
         }
     }
+    void playerhit()
+    {
+        Mix_PlayChannel(-1, hit, 0);
+    }
 };
 class Game
 {
@@ -657,11 +699,19 @@ class Game
     SDL_Rect livesRect;
     vector<Buff> buffs;
     vector<DestructibleWall> destructibleWalls;
+    SDL_Texture* pauseBackground = nullptr;
+    SDL_Rect pauseBackgroundrect;
+    SDL_Texture* pauseButtonTexture = nullptr;
+    SDL_Rect pauseButtonRect;
+    SDL_Texture* resumeButtonTexture = nullptr;
+    SDL_Rect resumeButtonRect;
+    SDL_Texture* menuButtonTexture = nullptr;    // Texture cho nút Menu
+    SDL_Rect menuButtonRect;        // Rect cho nút Menu
+    bool gamePaused = 0;
     public:
     SDL_Window* window;
     SDL_Renderer* renderer;
     bool running;
-    bool pause;
     bool inmenu;
     vector<wall> walls;
     playertank player;
@@ -709,7 +759,7 @@ class Game
     Game():player(0, 80, nullptr),boss(nullptr)
     {
         running=1;
-        pause=0;
+        gamePaused=0;
         inmenu=1;
         if(SDL_Init(SDL_INIT_VIDEO)<0)
         {
@@ -788,6 +838,30 @@ class Game
         {
             cerr << "Không tải được ảnh hướng dẫn: " << IMG_GetError() << endl;
         }*/
+        //pause load
+        pauseButtonTexture = loadTexture("pause_button.png");
+        SDL_QueryTexture(pauseButtonTexture, NULL, NULL, &pauseButtonRect.w, &pauseButtonRect.h);
+        pauseButtonRect.w =40;  // Điều chỉnh kích thước nút Pause
+        pauseButtonRect.h =40;
+        pauseButtonRect.x = SCREEN_WIDTH - pauseButtonRect.w; // Góc phải
+        pauseButtonRect.y = 0;
+        pauseBackground = loadTexture("pause_background.png");
+        SDL_QueryTexture(pauseBackground, NULL, NULL, &pauseBackgroundrect.w, &pauseBackgroundrect.h);
+        pauseBackgroundrect.w =300;  // Điều chỉnh kích thước nút Pause
+        pauseBackgroundrect.h =150;
+        pauseBackgroundrect.x = 300; // Góc phải
+        pauseBackgroundrect.y = 200;
+        resumeButtonTexture = loadTexture("resume_button.png");
+        SDL_QueryTexture(resumeButtonTexture, NULL, NULL, &resumeButtonRect.w, &resumeButtonRect.h);
+        resumeButtonRect.w=60; resumeButtonRect.h=60;
+        resumeButtonRect.x= 500;
+        resumeButtonRect.y = 250;
+        menuButtonTexture = loadTexture("menu_button.png");
+        SDL_QueryTexture(menuButtonTexture, NULL, NULL, &menuButtonRect.w, &menuButtonRect.h);
+        menuButtonRect.w=60;
+        menuButtonRect.h=60;
+        menuButtonRect.x = 400;
+        menuButtonRect.y= 250;
         introImageRect= {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
         generatewalls();
         spawnenemies();
@@ -991,23 +1065,10 @@ class Game
     void pausegame()
     {
         // Tải ảnh pause
-        SDL_Texture* pauseTexture = loadTexture("pause.jpeg");
-        if (!pauseTexture)
-        {
-            cerr << "khong tim thay anh pause pause.jpeg\n";
-            return;
-        }
-        else //if (pauseTexture)
-        {
-            SDL_Rect destRect;
-            destRect.x = (SCREEN_WIDTH - 300) / 2;
-            destRect.y = (SCREEN_HEIGHT - 100) / 2;
-            destRect.w = 300;
-            destRect.h = 100;
-            SDL_RenderCopy(renderer, pauseTexture, NULL, &destRect);
-            SDL_RenderPresent(renderer);
-            SDL_DestroyTexture(pauseTexture);
-        }
+        SDL_RenderCopy(renderer,pauseBackground,NULL,&pauseBackgroundrect);//vẽ hình nền pause riêng
+        SDL_RenderCopy(renderer, resumeButtonTexture, NULL, &resumeButtonRect);
+        SDL_RenderCopy(renderer, menuButtonTexture, NULL, &menuButtonRect);
+        SDL_RenderPresent(renderer);
     }
     //draw
     void render()
@@ -1015,7 +1076,7 @@ class Game
         //window
         SDL_SetRenderDrawColor(renderer, 128, 128, 128, 255);
         SDL_RenderClear(renderer);
-        if(pause==0)
+        if(gamePaused==0)
         {
             SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
             for(int i=0;i<30;i++)
@@ -1026,28 +1087,26 @@ class Game
                     SDL_RenderFillRect(renderer, &tile);
                 }
             }
-             if (!livesnanmoFont) return; // Bỏ qua nếu font chưa được tải
-
+            if (!livesnanmoFont) return; // Bỏ qua nếu font chưa được tải
             SDL_Color textColor = {255, 255, 255};
-
             // Hiển thị đạn
-            SDL_Surface* ammoSurface = TTF_RenderText_Solid(livesnanmoFont, ("Ammo: " + std::to_string(player.currentAmmo)).c_str(), textColor);
-             if (!ammoSurface)
-             {
-                 std::cerr << "Lỗi render text: " << TTF_GetError() << std::endl;
-                 return;
-             }
+            SDL_Surface* ammoSurface = TTF_RenderText_Solid(livesnanmoFont, ("Ammo: " + to_string(player.currentAmmo)).c_str(), textColor);
+            if (!ammoSurface)
+            {
+                cerr << "Lỗi render text: " << TTF_GetError() << endl;
+                return;
+            }
             ammoTexture = SDL_CreateTextureFromSurface(renderer, ammoSurface);
             ammoRect = {10, 10, ammoSurface->w, ammoSurface->h};
             SDL_RenderCopy(renderer, ammoTexture, NULL, &ammoRect);
             SDL_FreeSurface(ammoSurface);
             // Hiển thị mạng
-            SDL_Surface* livesSurface = TTF_RenderText_Solid(livesnanmoFont, ("Lives: " + std::to_string(player.lives)).c_str(), textColor);
+            SDL_Surface* livesSurface = TTF_RenderText_Solid(livesnanmoFont, ("Lives: " + to_string(player.lives)).c_str(), textColor);
             if (!livesSurface)
-             {
-                 std::cerr << "Lỗi render text: " << TTF_GetError() << std::endl;
-                 return;
-             }
+            {
+                cerr << "Lỗi render text: " << TTF_GetError() << endl;
+                return;
+            }
             livesTexture = SDL_CreateTextureFromSurface(renderer, livesSurface);
             livesRect = {10, 30, livesSurface->w, livesSurface->h}; // Vị trí bên dưới đạn
             SDL_RenderCopy(renderer, livesTexture, NULL, &livesRect);
@@ -1079,51 +1138,78 @@ class Game
             {
                 buff.render(renderer);
             }
+            //pause
+            SDL_RenderCopy(renderer, pauseButtonTexture, NULL, &pauseButtonRect);
         }
         else {pausegame();}
         SDL_RenderPresent(renderer);
 
     }
-    //palyertank move
+    //palyer move
     void handle()
     {
         SDL_Event event;
         while(SDL_PollEvent(&event))
         {
             player.handleInput(event);
-            if(event.type==SDL_QUIT)
+            if(gamePaused==0)
             {
-                running=0;
+                if(event.type==SDL_QUIT)
+                {
+                    running=0;
+                }
+                if (keystates[SDL_SCANCODE_UP])
+                {
+                    player.move(0, -5, walls, destructibleWalls);
+                }
+                if (keystates[SDL_SCANCODE_DOWN])
+                {
+                    player.move(0, 5, walls, destructibleWalls);
+                }
+                if (keystates[SDL_SCANCODE_LEFT])
+                {
+                    player.move(-5, 0, walls, destructibleWalls);
+                }
+                if (keystates[SDL_SCANCODE_RIGHT])
+                {
+                    player.move(5, 0, walls, destructibleWalls);
+                }
+                if (keystates[SDL_SCANCODE_SPACE])
+                {
+                     player.shoot(renderer, "playerbullet.jpg");
+                }
             }
-            if (keystates[SDL_SCANCODE_UP])
+            if (event.type==SDL_MOUSEBUTTONDOWN)
             {
-                player.move(0, -5, walls, destructibleWalls);
-            }
-            if (keystates[SDL_SCANCODE_DOWN])
-            {
-                player.move(0, 5, walls, destructibleWalls);
-            }
-            if (keystates[SDL_SCANCODE_LEFT])
-            {
-                player.move(-5, 0, walls, destructibleWalls);
-            }
-            if (keystates[SDL_SCANCODE_RIGHT])
-            {
-                player.move(5, 0, walls, destructibleWalls);
-            }
-            if (keystates[SDL_SCANCODE_SPACE])
-            {
-                 player.shoot(renderer, "playerbullet.jpg");
-            }
-            if (keystates[SDL_SCANCODE_ESCAPE])
-            {
-                   pause = !pause;
+                if (!gamePaused)
+                {
+                    int x = event.button.x; int y = event.button.y;
+                    if (x >= pauseButtonRect.x && x < pauseButtonRect.x + pauseButtonRect.w && y >= pauseButtonRect.y && y < pauseButtonRect.y + pauseButtonRect.h)
+                    {
+                        gamePaused = !gamePaused;
+                    }
+                }
+                if (gamePaused)
+                {
+                    int x = event.button.x; int y = event.button.y;
+                    if (x >= resumeButtonRect.x && x < resumeButtonRect.x + resumeButtonRect.w && y >= resumeButtonRect.y && y < resumeButtonRect.y + resumeButtonRect.h)
+                    {
+                        gamePaused = !gamePaused;//Quay trở lại game
+                    }
+                    else if (x >= menuButtonRect.x && x < menuButtonRect.x + menuButtonRect.w && y >= menuButtonRect.y && y < menuButtonRect.y + menuButtonRect.h)
+                    {
+                        inmenu = 1;//Về lại màn hình menu
+                        gamePaused=!gamePaused;
+                        resetGame();
+                        break;
+                    }
+                }
             }
         }
     }
     void update()
     {
-        if(pause==0)
+        if(gamePaused==0)
         {
             player.update(); // Cập nhật animation của player
             handlebuff();
@@ -1131,12 +1217,13 @@ class Game
             if(boss)
             {
                 boss->move(walls, player, renderer);
-                boss->updatebullet(renderer);
+                boss->update(renderer);
                 for (auto &bullet : boss->boss_bullets)
                 {
                     if (SDL_HasIntersection(&bullet.rect, &player.rect))
                     {
                         player.lives--;
+                        player.playhurtSound();
                         bullet.active = false;
                         if(player.lives<=0)
                         {
@@ -1175,7 +1262,6 @@ class Game
                     bullet.active = 0;//Hủy đạn
                     if (boss->health <= 0)
                     {
-                        //delete boss;//xóa boss
                         boss = nullptr; // reset lại biến boss về nullptr
                     }
                 }
@@ -1200,13 +1286,11 @@ class Game
                         break;
                     }
                 }
-            }
-            for(auto &bullet:player.bullets)
-            {
                 for(auto& enemy:enemies)
                 {
                     if(enemy.active && SDL_HasIntersection(&bullet.rect,&enemy.rect))
                     {
+                        enemy.playerhit();
                         enemy.active=0;
                         bullet.active=0;
                         break;
@@ -1222,9 +1306,6 @@ class Game
                 {
                     enemy.shoot(renderer,"enemybullet.png");
                 }
-            }
-            for(auto& enemy:enemies)
-            {
                 for(auto& bullet:enemy.bullets)
                 {
                     for(auto& wall:walls)
@@ -1278,6 +1359,7 @@ class Game
                     if(SDL_HasIntersection(&bullet.rect,&player.rect))
                     {
                         player.lives--;//trừ mạng
+                        player.playhurtSound();
                         bullet.active = 0; // Xóa đạn
                         if(player.lives<=0)
                         {
@@ -1303,6 +1385,33 @@ class Game
             }
         }
     }
+    void resetGame()
+    { // Hàm reset game
+        player.lives = 3;
+        player.currentAmmo = player.ammo;
+        player.x=0; player.y=80; player.rect= {player.x,player.y,TILE_SIZE,TILE_SIZE};
+        player.dirx=0; player.diry=-1; //reset vị trí player
+        enemynumber=5; //Khởi tạo lại enemynumber.
+        spawnenemies();//reset enemy.
+        player.bullets.clear();
+        //Reset lại buff
+        buffs.clear();
+        generateBuffs();
+        //Xóa boss cũ, nếu có
+        if (boss!=nullptr)
+        {
+            delete boss;
+            boss = nullptr;
+        }
+        spawnBoss();
+        if(boss!=nullptr) //reset lại boss
+        {
+            boss->health = 10;
+            boss->shootDelay =180;
+            boss->boss_bullets.clear();
+        }
+        SDL_Delay(50);
+    }
     void run()
     {
         while(running)
@@ -1315,7 +1424,7 @@ class Game
             else
             {
                 handle();
-                if(pause==0)
+                if(gamePaused==0)
                 {
                     render();
                     update();
@@ -1354,6 +1463,14 @@ int main(int argc, char* argv[])
         }
     }
     file.close();  // Đóng file
+    if (Mix_Init(MIX_INIT_OGG | MIX_INIT_MP3 | MIX_INIT_FLAC | MIX_INIT_MOD) == 0)
+    {
+        cerr <<"Mix khoi tao loi" << Mix_GetError();
+    }
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0)
+    {
+        cerr << "SDL_mixer could not initialize! SDL_mixer Error: " << Mix_GetError() <<"\n";
+    }
     Game game;
     if(game.running)
     {
