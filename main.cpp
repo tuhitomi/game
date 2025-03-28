@@ -231,6 +231,7 @@ public:
         }
         //texture = loadTexture(imagePath, renderer);  // Tải texture cho xe tăng
         shootSound = Mix_LoadWAV("playershoot.wav");
+        Mix_VolumeChunk(shootSound,MIX_MAX_VOLUME/4);
         hurtSound = Mix_LoadWAV("hurt.wav");
         lastFrameTime = SDL_GetTicks();
     }
@@ -708,6 +709,7 @@ class Game
     SDL_Texture* menuButtonTexture = nullptr;    // Texture cho nút Menu
     SDL_Rect menuButtonRect;        // Rect cho nút Menu
     bool gamePaused = 0;
+    Mix_Music *backgroundMusic = nullptr;
     public:
     SDL_Window* window;
     SDL_Renderer* renderer;
@@ -805,7 +807,8 @@ class Game
             return; // Hoặc xử lý lỗi theo cách khác
         }
         gFont = TTF_OpenFont("menufont.ttf", 50);  // Tải font
-        if (gFont == NULL) {
+        if (gFont == NULL)
+        {
             cerr << "Failed to load lazy font! SDL_ttf Error: " << TTF_GetError() << "\n";
             running = 0;
             return;
@@ -816,6 +819,9 @@ class Game
             running = 0;
             return;
         }
+        //sound background
+        backgroundMusic = Mix_LoadMUS("background_music.mp3");
+        Mix_PlayMusic(backgroundMusic, -1); // Phát nhạc nền lặp lại (-1)
         // Tải texture cho chữ PLAY
         SDL_Color textColor = { 255, 255, 255 }; // Màu trắng
         SDL_Surface* playSurface = TTF_RenderText_Solid(gFont, "PLAY", textColor);
@@ -1436,6 +1442,9 @@ class Game
     }
     ~Game()
     {
+        Mix_FreeMusic(backgroundMusic);  // Giải phóng nhạc nền
+        backgroundMusic=nullptr;
+        Mix_Quit();
         TTF_CloseFont(gFont);
         SDL_DestroyTexture(ammoTexture);
         SDL_DestroyTexture(livesTexture);
