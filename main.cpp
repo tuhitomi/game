@@ -354,7 +354,7 @@ public:
     SDL_Texture *spriteSheet = nullptr; //Thêm cho boss animation.
     int x, y;
     int dirx,diry;
-    int health = 10;
+    int health = 20;
     int movedelay;
     SDL_Rect rect;
     SDL_Texture* texture;
@@ -485,17 +485,17 @@ public:
         }
         SDL_SetRenderDrawColor(renderer,0,0,0,0);
         //Vẽ thanh máu
-        if (health > 6)
+        if (health > 12)
         {
             healthColor = {0,255,0};
         }
-        else if (health >3)
+        else if (health >6)
         {
                 healthColor = {255,255,0};
         }
         else healthColor= {255,0,0};
         SDL_SetRenderDrawColor(renderer, healthColor.r, healthColor.g, healthColor.b, 255);
-        healthBarRect.w = rect.w * (static_cast<double>(health) / 10);
+        healthBarRect.w = rect.w * (static_cast<double>(health) / 20);
         healthBarRect.x = rect.x;
         healthBarRect.y=rect.y-10;
         SDL_RenderFillRect(renderer, &healthBarRect);
@@ -718,7 +718,7 @@ class Game
     vector<wall> walls;
     playercl player;
     Boss* boss=nullptr;
-    int enemynumber=5;
+    int enemynumber=10;
     vector<enemycl> enemies;
     void generatewalls()
     {
@@ -1397,7 +1397,7 @@ class Game
         player.currentAmmo = player.ammo;
         player.x=0; player.y=80; player.rect= {player.x,player.y,TILE_SIZE,TILE_SIZE};
         player.dirx=0; player.diry=-1; //reset vị trí player
-        enemynumber=5; //Khởi tạo lại enemynumber.
+        enemynumber=10; //Khởi tạo lại enemynumber.
         spawnenemies();//reset enemy.
         player.bullets.clear();
         //Reset lại buff
@@ -1412,8 +1412,8 @@ class Game
         spawnBoss();
         if(boss!=nullptr) //reset lại boss
         {
-            boss->health = 10;
-            boss->shootDelay =180;
+            boss->health = 20;
+            boss->shootDelay =187;
             boss->boss_bullets.clear();
         }
         SDL_Delay(50);
