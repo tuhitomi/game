@@ -508,7 +508,7 @@ public:
 
     }
 };
-class enemytank
+class enemycl
 {
 public:
     //sound
@@ -530,7 +530,7 @@ public:
     vector<bullet> bullets;
     SDL_Texture* texture;  // Thêm texture cho xe tăng kẻ thù
 
-    enemytank(int startx, int starty, SDL_Renderer* renderer)
+    enemycl(int startx, int starty, SDL_Renderer* renderer)
     {
         movedelay=15;
         shootdelay=5;
@@ -719,7 +719,7 @@ class Game
     playercl player;
     Boss* boss=nullptr;
     int enemynumber=5;
-    vector<enemytank> enemies;
+    vector<enemycl> enemies;
     void generatewalls()
     {
         for(int i=0;i<28;i++)
@@ -1021,7 +1021,7 @@ class Game
              }
          }
     }
-    //enemiestank
+    //enemies
     void spawnenemies()
     {
         enemies.clear();
@@ -1051,7 +1051,7 @@ class Game
                     }
                 }
             }
-            enemies.push_back(enemytank(ex, ey, renderer));  // Khởi tạo kẻ thù với ảnh
+            enemies.push_back(enemycl(ex, ey, renderer));  // Khởi tạo kẻ thù với ảnh
         }
     }
     //boss
@@ -1333,7 +1333,7 @@ class Game
                     }
                 }
             }
-            enemies.erase(std::remove_if(enemies.begin(),enemies.end(),[](enemytank &e){return !e.active;}),enemies.end());
+            enemies.erase(std::remove_if(enemies.begin(),enemies.end(),[](enemycl &e){return !e.active;}),enemies.end());
             // Kiểm tra nếu thắng (không còn kẻ thù)
             if (enemies.empty() && !boss)
             {
