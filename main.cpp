@@ -169,7 +169,7 @@ public:
         }
     }
 };
-class playertank
+class playercl
 {
 public:
     //sound
@@ -212,7 +212,7 @@ public:
         }
         bullets.erase(std::remove_if(bullets.begin(),bullets.end(),[](bullet &b){return !b.active;}),bullets.end());
     }
-    playertank(int startx, int starty, SDL_Renderer* renderer)
+    playercl(int startx, int starty, SDL_Renderer* renderer)
     {
         x = startx;
         y = starty;
@@ -423,7 +423,7 @@ public:
         }
         boss_bullets.erase(std::remove_if(boss_bullets.begin(),boss_bullets.end(),[](bullet &b){return !b.active;}),boss_bullets.end());
     }
-    void move(const vector<wall>& walls, const playertank& player, SDL_Renderer* renderer)
+    void move(const vector<wall>& walls, const playercl& player, SDL_Renderer* renderer)
     {
 
         if(--movedelay>0) return;
@@ -588,7 +588,7 @@ public:
 
         return texture;
     }
-    void move(const vector<wall>& walls, const playertank& player, SDL_Renderer* renderer)
+    void move(const vector<wall>& walls, const playercl& player, SDL_Renderer* renderer)
     {
 
         if(--movedelay>0) return;
@@ -716,7 +716,7 @@ class Game
     bool running;
     bool inmenu;
     vector<wall> walls;
-    playertank player;
+    playercl player;
     Boss* boss=nullptr;
     int enemynumber=5;
     vector<enemytank> enemies;
