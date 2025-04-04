@@ -698,6 +698,9 @@ class Game
     SDL_Texture* livesTexture = nullptr;
     SDL_Rect ammoRect;
     SDL_Rect livesRect;
+    SDL_Texture* ammoIcon = nullptr;
+    SDL_Texture* heartIcon = nullptr;
+    SDL_Rect ammoIconRect, heartIconRect;
     vector<Buff> buffs;
     vector<DestructibleWall> destructibleWalls;
     SDL_Texture* pauseBackground = nullptr;
@@ -869,6 +872,17 @@ class Game
         menuButtonRect.x = 400;
         menuButtonRect.y= 250;
         introImageRect= {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
+         ammoIcon = loadTexture("playerbullet.jpg");
+        if (!ammoIcon)
+        {
+            cerr << "Không thể tải icon đạn: " << IMG_GetError() << endl;
+        }
+        heartIcon = loadTexture("playpower.png");
+        if (!heartIcon)
+        {
+            cerr << "Không thể tải icon mạng: " << IMG_GetError() << endl;
+
+        }
         generatewalls();
         spawnenemies();
         generateBuffs();
@@ -1093,30 +1107,30 @@ class Game
                     SDL_RenderFillRect(renderer, &tile);
                 }
             }
-            if (!livesnanmoFont) return; // Bỏ qua nếu font chưa được tải
+            //hiển thị số lượng đạn
+            SDL_QueryTexture(ammoIcon, NULL, NULL, &ammoIconRect.w, &ammoIconRect.h);
+            ammoIconRect.x = 0;
+            ammoIconRect.y = 0;
+            ammoIconRect.w = 20;
+            ammoIconRect.h = 20;
+            SDL_RenderCopy(renderer, ammoIcon, NULL, &ammoIconRect);
             SDL_Color textColor = {255, 255, 255};
-            // Hiển thị đạn
-            SDL_Surface* ammoSurface = TTF_RenderText_Solid(livesnanmoFont, ("Ammo: " + to_string(player.currentAmmo)).c_str(), textColor);
-            if (!ammoSurface)
-            {
-                cerr << "Lỗi render text: " << TTF_GetError() << endl;
-                return;
-            }
+            SDL_Surface* ammoSurface = TTF_RenderText_Solid(livesnanmoFont, ( to_string(player.currentAmmo)).c_str(), textColor);
             ammoTexture = SDL_CreateTextureFromSurface(renderer, ammoSurface);
-            ammoRect = {10, 10, ammoSurface->w, ammoSurface->h};
+            ammoRect = {ammoIconRect.x + ammoIconRect.w + 5, 0, 20, 20};
             SDL_RenderCopy(renderer, ammoTexture, NULL, &ammoRect);
             SDL_FreeSurface(ammoSurface);
             // Hiển thị mạng
-            SDL_Surface* livesSurface = TTF_RenderText_Solid(livesnanmoFont, ("Lives: " + to_string(player.lives)).c_str(), textColor);
-            if (!livesSurface)
+            SDL_QueryTexture(heartIcon, NULL, NULL, &heartIconRect.w, &heartIconRect.h);
+            heartIconRect.x = 10;
+            heartIconRect.y = 0 ;
+            heartIconRect.w = 20;
+            heartIconRect.h=20;
+            for (int i = 0; i < player.lives; ++i)
             {
-                cerr << "Lỗi render text: " << TTF_GetError() << endl;
-                return;
+                 heartIconRect.x =100 + (heartIconRect.w + 5) * i;
+                 SDL_RenderCopy(renderer, heartIcon, NULL, &heartIconRect);
             }
-            livesTexture = SDL_CreateTextureFromSurface(renderer, livesSurface);
-            livesRect = {10, 30, livesSurface->w, livesSurface->h}; // Vị trí bên dưới đạn
-            SDL_RenderCopy(renderer, livesTexture, NULL, &livesRect);
-            SDL_FreeSurface(livesSurface);
             //wall
             for(int i=0;i<walls.size();i++)
             {
