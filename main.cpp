@@ -151,8 +151,8 @@ public:
     }
     void move()
     {
-        x=x+dx/4;
-        y=y+dy/4;
+        x=x+dx/5;
+        y=y+dy/5;
         rect.x=x;
         rect.y=y;
         if(x<=10 || x>=SCREEN_WIDTH || y<=10 || y>=SCREEN_HEIGHT)
